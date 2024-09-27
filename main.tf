@@ -68,7 +68,7 @@ resource "aws_internet_gateway" "internet_gateway" {
   }
 }
 
-# Route table with a route to the internet gateway
+# Route table with a route to the internet gateway for instances inside the public subnets
 resource "aws_route_table" "public_route_table" {
   vpc_id = aws_vpc.main_vpc.id
 
@@ -89,3 +89,37 @@ resource "aws_route_table_association" "public_route_table_association" {
   route_table_id = aws_route_table.public_route_table.id
 }
 
+# Creating a route table for each of the private subnets
+resource "aws_route_table" "private_route_tables" {
+  for_each = aws_subnet.private_subnets
+
+  vpc_id = aws_vpc.main_vpc.id
+
+  tags = {
+    Name = "${each.value.id}_private_route_table"
+  }
+}
+
+# The VPC endpoint (Gateway endpoint) to used to connect to the S3 bucket instead of traversing the wider internet
+resource "aws_vpc_endpoint" "s3_endpoint" {
+  vpc_id       = aws_vpc.main_vpc.id
+  service_name = "com.amazonaws.us-east-1.s3"
+
+  tags = {
+    Name = "s3_endpoint"
+  }
+}
+
+# Associating the endpoint with all the route tables.
+resource "aws_vpc_endpoint_route_table_association" "endpoint_route_table_associations_private_route_tables" {
+  # Using for_each because we multiple private routables.
+  for_each        = aws_route_table.private_route_tables
+  vpc_endpoint_id = aws_vpc_endpoint.s3_endpoint.id
+  route_table_id  = each.value.id
+
+}
+
+resource "aws_vpc_endpoint_route_table_association" "endpoint_route_table_associations_public_route_table" {
+  vpc_endpoint_id = aws_vpc_endpoint.s3_endpoint.id
+  route_table_id  = aws_route_table.public_route_table.id
+}
