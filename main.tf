@@ -20,65 +20,72 @@ resource "aws_vpc" "main_vpc" {
   }
 }
 
-resource "aws_subnet" "public_subnetA" {
-  vpc_id                  = aws_vpc.main_vpc.id
-  cidr_block              = "10.0.1.0/24"
-  availability_zone       = "us-east-1a"
-  map_public_ip_on_launch = true
+# Creating local variables for the 6 subnets so that it can be reusable.
+locals {
+  public_subnets = {
+    "subnet-A" = { cidr_block = "10.0.1.0/24", availability_zone = "us-east-1a", tag_name = "public_subnetA" }
+    "subnet-B" = { cidr_block = "10.0.3.0/24", availability_zone = "us-east-1b", tag_name = "public_subnetB" }
+    "subnet-C" = { cidr_block = "10.0.5.0/24", availability_zone = "us-east-1c", tag_name = "public_subnetC" }
+  }
 
-  tags = {
-    Name = "public_subnetA"
+  private_subnets = {
+    "subnet-A" = { cidr_block = "10.0.2.0/24", availability_zone = "us-east-1a", tag_name = "private_subnetA" }
+    "subnet-B" = { cidr_block = "10.0.4.0/24", availability_zone = "us-east-1b", tag_name = "private_subnetB" }
+    "subnet-C" = { cidr_block = "10.0.6.0/24", availability_zone = "us-east-1c", tag_name = "private_subnetC" }
   }
 }
 
-resource "aws_subnet" "private_subnetA" {
+resource "aws_subnet" "public_subnets" {
+  for_each = local.public_subnets
+
   vpc_id            = aws_vpc.main_vpc.id
-  cidr_block        = "10.0.2.0/24"
-  availability_zone = "us-east-1a"
+  cidr_block        = each.value.cidr_block
+  availability_zone = each.value.availability_zone
 
   tags = {
-    Name = "private_subnetA"
+    Name = each.value.tag_name
   }
 }
 
-resource "aws_subnet" "public_subnetB" {
-  vpc_id                  = aws_vpc.main_vpc.id
-  cidr_block              = "10.0.3.0/24"
-  availability_zone       = "us-east-1b"
-  map_public_ip_on_launch = true
+resource "aws_subnet" "private_subnets" {
+  vpc_id = aws_vpc.main_vpc.id
+
+  for_each          = local.private_subnets
+  cidr_block        = each.value.cidr_block
+  availability_zone = each.value.availability_zone
 
   tags = {
-    Name = "public_subnetB"
+    Name = each.value.tag_name
   }
 }
 
-resource "aws_subnet" "private_subnetB" {
-  vpc_id            = aws_vpc.main_vpc.id
-  cidr_block        = "10.0.4.0/24"
-  availability_zone = "us-east-1b"
+# Internet gateway that is associated with the main vpc
+resource "aws_internet_gateway" "internet_gateway" {
+  vpc_id = aws_vpc.main_vpc.id
 
   tags = {
-    Name = "private_subnetB"
+    Name = "internet_gateway"
   }
 }
 
-resource "aws_subnet" "public_subnetC" {
-  vpc_id                  = aws_vpc.main_vpc.id
-  cidr_block              = "10.0.5.0/24"
-  availability_zone       = "us-east-1c"
-  map_public_ip_on_launch = true
+# Route table with a route to the internet gateway
+resource "aws_route_table" "public_route_table" {
+  vpc_id = aws_vpc.main_vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.internet_gateway.id
+  }
 
   tags = {
-    Name = "public_subnetC"
+    Name = "public_route_table"
   }
 }
 
-resource "aws_subnet" "private_subnetC" {
-  vpc_id            = aws_vpc.main_vpc.id
-  cidr_block        = "10.0.6.0/24"
-  availability_zone = "us-east-1c"
-
-  tags = {
-    Name = "private_subnetc"
-  }
+# Association of the public route table to all the public subnets in the vpc
+resource "aws_route_table_association" "public_route_table_association" {
+  for_each       = aws_subnet.public_subnets
+  subnet_id      = each.value.id
+  route_table_id = aws_route_table.public_route_table.id
 }
+
